@@ -15,8 +15,7 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import confusion_matrix, precision_score, recall_score, accuracy_score, f1_score
 from sklearn import feature_extraction
 
-sys.path.append('/home/glin6/causal_text/src/cts/')
-sys.path.append('/home/glin6/causal_text/src/')
+sys.path.append('/home/glin6/scratch-midway2/causal_text/src/')
 from Qmod import *
 from simulation import *
 
@@ -29,7 +28,6 @@ def get_data(args):
     '''Generate simulated data and split it into two parts'''
     random.seed(args.dataseed)
     np.random.seed(args.dataseed)
-    torch.manual_seed(args.dataseed)
 
     raw_df = pd.read_csv(args.data)
     df, offset =run_simulation(raw_df, propensities=[args.p0, args.p1], 
@@ -43,18 +41,18 @@ def get_data(args):
     data_dir = data_dir+'processed.csv'
     dat.to_csv(data_dir, index = False)
 
-    training_df, test_df = train_test_split(dat,prop_train=0.7)
-    training_df = training_df.reset_index()
-    train_dir = osp.join(args.datadir,'beta_t_%.1f_beta_c_%.1f_gamma_%.1f'%(args.beta_t, args.beta_c, args.gamma))
-    train_dir = train_dir+'train.csv'
-    training_df.to_csv(train_dir, index = False)
+    # training_df, test_df = train_test_split(dat,prop_train=0.7)
+    # training_df = training_df.reset_index()
+    # train_dir = osp.join(args.datadir,'beta_t_%.1f_beta_c_%.1f_gamma_%.1f'%(args.beta_t, args.beta_c, args.gamma))
+    # train_dir = train_dir+'train.csv'
+    # training_df.to_csv(train_dir, index = False)
 
-    test_df = test_df.reset_index()
-    test_dir = osp.join(args.datadir,'beta_t_%.1f_beta_c_%.1f_gamma_%.1f'%(args.beta_t, args.beta_c, args.gamma))
-    test_dir = test_dir+'test.csv'
-    test_df.to_csv(test_dir, index = False)
+    # test_df = test_df.reset_index()
+    # test_dir = osp.join(args.datadir,'beta_t_%.1f_beta_c_%.1f_gamma_%.1f'%(args.beta_t, args.beta_c, args.gamma))
+    # test_dir = test_dir+'test.csv'
+    # test_df.to_csv(test_dir, index = False)
 
-    return training_df, test_df
+    return 
 
 
 if __name__ == '__main__':
@@ -64,7 +62,6 @@ if __name__ == '__main__':
 
     parser = ArgumentParser()
     parser.add_argument('--dataseed', type=str, default='420', help='Choose random seed')
-    parser.add_argument('--resultsdir', type=str, default='/home/glin6/scratch-midway2/causal_text/binary_causal/', help='Path to the results')
     parser.add_argument('--datadir', type=str, default='/home/glin6/scratch-midway2/causal_text/binary_causal/data/', help='Path to saving the simulated dataset')
     parser.add_argument('--data', type=str, default='/home/glin6/scratch-midway2/causal_text/binary_causal/data/', help='Path to the raw dataset')
 
@@ -80,7 +77,7 @@ if __name__ == '__main__':
 
     args.dataseed = int(args.dataseed)
 
-    training_df, test_df = get_data(args)
+    get_data(args)
 
 
     quit()

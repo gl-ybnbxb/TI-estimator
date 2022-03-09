@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from torch.utils.data import Dataset, TensorDataset, DataLoader, RandomSampler, SequentialSampler
+from torch.optim import SGD
 
 from transformers import AdamW
 from transformers import get_linear_schedule_with_warmup
@@ -19,15 +20,21 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel
+from statsmodels.nonparametric.kernel_regression import KernelReg
+from sklearn.tree import DecisionTreeClassifier
 
 from tqdm import tqdm
 import math
 import random
 
 import os.path as osp
+import sys
+sys.path.append('/home/glin6/scratch-midway2/causal_text/src/')
+from util import *
 
-
+# print(torch.cuda.device_count())
 CUDA = (torch.cuda.device_count() > 0)
+device = ("cuda" if torch.cuda.is_available() else "cpu")
 MASK_IDX = 103
 
 #   error function
@@ -35,7 +42,7 @@ def gelu(x):
     return 0.5 * x * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
 
-class CausalQBaseline(DistilBertPreTrainedModel):
+class CausalQNet(DistilBertPreTrainedModel):
     """Build the model"""
     def __init__(self, config):
         super().__init__(config)
@@ -101,40 +108,28 @@ class CausalQBaseline(DistilBertPreTrainedModel):
         if Y is not None:
             A0_indices = (A == 0).nonzero().squeeze()
             A1_indices = (A == 1).nonzero().squeeze()
-
-
             # Y loss
             y_loss_A1 = (((Q1.view(-1)-Y)[A1_indices])**2).sum()
             y_loss_A0 = (((Q0.view(-1)-Y)[A0_indices])**2).sum()
-
             y_loss = y_loss_A0 + y_loss_A1
-
         else:
             y_loss = 0.0
-
 
         return Q0, Q1, mlm_loss, y_loss, a_loss, a_acc
 
 
-
-class QBaselineWrapper:
-    """Train the model and do inference"""
+class QNet:
+    """Train the prognostic model"""
     def __init__(self, a_weight = 1.0, y_weight=1.0,
                  mlm_weight=1.0,
-                 num_neighbors = 100,
                  batch_size = 32,
                  modeldir = None):
 
-        self.model = CausalQBaseline.from_pretrained(
+        self.model = CausalQNet.from_pretrained(
             '/home/glin6/causal_text/pretrained_model/model/',
             num_labels = 2,
             output_attentions=False,
             output_hidden_states=False)
-        # self.model = CausalQBaseline.from_pretrained(
-        #     '/content/drive/MyDrive/causal_text/model/',
-        #     num_labels = 2,
-        #     output_attentions=False,
-        #     output_hidden_states=False)
 
         if CUDA:
             self.model = self.model.cuda()
@@ -145,13 +140,6 @@ class QBaselineWrapper:
             'mlm': mlm_weight}
 
         self.batch_size = batch_size
-
-        self.propensities_knn = KNeighborsClassifier(n_neighbors=num_neighbors)
-
-        kernel = DotProduct() + WhiteKernel()
-        self.propensities_gp = GaussianProcessClassifier(kernel=kernel, random_state=0)
-
-
         self.modeldir = modeldir
 
 
@@ -164,12 +152,9 @@ class QBaselineWrapper:
         if tokenizer is None:
             tokenizer = DistilBertTokenizer.from_pretrained(
                '/home/glin6/causal_text/pretrained_model/tokenizer/', do_lower_case=True)
-            # tokenizer = DistilBertTokenizer.from_pretrained(
-            #    '/content/drive/MyDrive/causal_text/tokenizer/', do_lower_case=True)
 
         out = defaultdict(list)
         for i, (W, A, C, Y) in enumerate(zip(texts, treatments, confounders, outcomes)):
-            # out['W_raw'].append(W)
             encoded_sent = tokenizer.encode_plus(W, add_special_tokens=True,
                                                 max_length=128,
                                                 truncation=True,
@@ -191,8 +176,8 @@ class QBaselineWrapper:
 
         return dataloader
     
-    def train(self, texts, treatments, confounders, outcomes, learning_rate=2e-5, epochs=1, patience=4):
-        ''' Train the baseline model'''
+    def train(self, texts, treatments, confounders, outcomes, learning_rate=2e-5, epochs=1, patience=5):
+        ''' Train the model'''
 
         # split data into two parts
         idx = list(range(len(texts)))
@@ -203,15 +188,15 @@ class QBaselineWrapper:
         idx_val = idx[n_train:]
 
         # list of data
-        # train_dataloader = self.build_dataloader(texts, treatments, outcomes)
         train_dataloader = self.build_dataloader(texts[idx_train], 
             treatments[idx_train], confounders[idx_train], outcomes[idx_train])
         val_dataloader = self.build_dataloader(texts[idx_val], 
             treatments[idx_val], confounders[idx_val], outcomes[idx_val], sampler='sequential')
         
 
-        self.model.train() # the baseline model
+        self.model.train() 
         optimizer = AdamW(self.model.parameters(), lr = learning_rate, eps=1e-8)
+        # optimizer = SGD(self.model.parameters(), lr = learning_rate)
 
         best_loss = 1e6
         epochs_no_improve = 0
@@ -235,7 +220,7 @@ class QBaselineWrapper:
                        
                 pbar.set_postfix({'Y loss': y_loss.item(),
                   'A loss': a_loss.item(), 'A accuracy': a_acc.item(), 
-                  'mlm loss': mlm_loss.item(), })
+                  'mlm loss': mlm_loss.item()})
 
                 # optimizaion for the baseline
                 loss.backward()
@@ -251,7 +236,7 @@ class QBaselineWrapper:
                 if CUDA:
                     batch = (x.cuda() for x in batch)
                 text_id, text_len, text_mask, A, _, Y = batch
-                _, _, mlm_loss, y_loss, a_loss, a_acc = self.model(text_id, text_len, text_mask, A, Y)
+                _, _, _, y_loss, a_loss, a_acc = self.model(text_id, text_len, text_mask, A, Y, use_mlm=False)
                 
                 a_val_losses.append(a_loss.item())
                 y_val_losses.append(y_loss.item())
@@ -261,7 +246,6 @@ class QBaselineWrapper:
                 a_val_accs.append(a_acc.item())
 
 
-            # print(val_losses)
             a_val_loss = sum(a_val_losses)/n_val
             print('A Validation loss:',a_val_loss)
 
@@ -277,125 +261,116 @@ class QBaselineWrapper:
 
             # early stop
             if val_loss < best_loss:
-                torch.save(self.model, self.modeldir)
-                # torch.save(self.model,'/content/drive/MyDrive/causal_text/q_basemodel.pt')
+                torch.save(self.model, self.modeldir+'_bestmod.pt') # save the best model
                 best_loss = val_loss
                 epochs_no_improve = 0              
             else:
                 epochs_no_improve += 1
            
-            if epoch >= 5 and epochs_no_improve >= patience:
+            if epoch >= 5 and epochs_no_improve >= patience:              
                 print('Early stopping!' )
                 print('The number of epochs is:', epoch)
                 break
 
-        # load the saved best model
-        self.model = torch.load(self.modeldir)
-        # self.model = torch.load('/content/drive/MyDrive/causal_text/q_basemodel.pt')
+        # save the overfiting model       
+        # torch.save(self.model, self.modeldir+'_overfitmod.pt')
+
+        # load the best model as the model after training
+        self.model = torch.load(self.modeldir+'_bestmod.pt')
 
         return self.model
 
 
-    def get_Q(self, texts, treatments, confounders=None, outcomes=None):
-        self.model.eval()
+    def get_Q(self, texts, treatments, confounders=None, outcomes=None, model_dir=None):
+        '''Get prognostic scores Q0 and Q1 based on training model or saved model'''
         dataloader = self.build_dataloader(texts, treatments, confounders, outcomes, sampler='sequential')
         As, Cs, Ys = [], [], []
-        Q0s = [] # E[Y|A=0, text]
-        Q1s = [] # E[Y|A=1, text]
+        Q0s = []  # E[Y|A=0, text]
+        Q1s = []  # E[Y|A=1, text]
+        pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Statistics computing")
 
-        pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Baseline Statistics computing")
-        for step, batch in pbar:
-            if CUDA:
-                batch = (x.cuda() for x in batch)
-            text_id, text_len, text_mask, A, C, Y = batch
-            Q0, Q1, _, _, _, _ = self.model(text_id, text_len, text_mask, A, Y, use_mlm = False)
-            As += A.detach().cpu().numpy().tolist()
-            Cs += C.detach().cpu().numpy().tolist()
-            Ys += Y.detach().cpu().numpy().tolist()
-            Q0s += Q0.detach().cpu().numpy().tolist()
-            Q1s += Q1.detach().cpu().numpy().tolist()
-            
+        if not model_dir:
+            self.model.eval()
+            for step, batch in pbar:
+                if CUDA:
+                    batch = (x.cuda() for x in batch)
+                text_id, text_len, text_mask, A, C, Y = batch
+                Q0, Q1, _, _, _, _ = self.model(text_id, text_len, text_mask, A, Y, use_mlm = False)
+                As += A.detach().cpu().numpy().tolist()
+                Cs += C.detach().cpu().numpy().tolist()
+                Ys += Y.detach().cpu().numpy().tolist()
+                Q0s += Q0.detach().cpu().numpy().tolist()
+                Q1s += Q1.detach().cpu().numpy().tolist()
+        else:
+            Qmodel = torch.load(model_dir)
+            Qmodel.eval()
+            for step, batch in pbar:
+                if CUDA:
+                    batch = (x.cuda() for x in batch)
+                text_id, text_len, text_mask, A, C, Y = batch
+                Q0, Q1, _, _, _, _ = Qmodel(text_id, text_len, text_mask, A, Y, use_mlm = False)
+                As += A.detach().cpu().numpy().tolist()
+                Cs += C.detach().cpu().numpy().tolist()
+                Ys += Y.detach().cpu().numpy().tolist()
+                Q0s += Q0.detach().cpu().numpy().tolist()
+                Q1s += Q1.detach().cpu().numpy().tolist()
+
         Q0s = [item for sublist in Q0s for item in sublist]
         Q1s = [item for sublist in Q1s for item in sublist]
-
-        Q_probs = np.array(list(zip(Q0s, Q1s)))
         As = np.array(As)
         Ys = np.array(Ys)
+        Cs = np.array(Cs)
 
-        return Q_probs, As, Ys, Cs
+        return Q0s, Q1s, As, Ys, Cs
         
-    def train_propensities(self, texts, treatments, confounders=None, outcomes=None):
-      '''Train the g model directly on testing data'''
-      Q_mat, As , Ys, _ = self.get_Q(texts, treatments, confounders, outcomes)
 
-      # knn to build propensity model
-      self.propensities_knn.fit(Q_mat, As)
-      print(self.propensities_knn.score(Q_mat, As))
+def get_propensities(As, Q0s, Q1s, model_type='GaussianProcessRegression', kernel=None, random_state=0, n_neighbors=100):
+    """Train the propensity model directly on the data 
+    and compute propensities of the data"""
 
-      # Gaussian Process
-      self.propensities_gp.fit(Q_mat, As)
-      print(self.propensities_gp.score(Q_mat, As))
+    Q_mat = np.array(list(zip(Q0s, Q1s)))
 
-      return self.propensities_knn, self.propensities_gp
-
-
-    def refit_Q(self, Q_mat, treatments, outcomes=None):
-        '''Use knn to fit and get Q0 Q1
-        Q_mat, tretaments and outcomes are all numpy array'''
-        A0_indices = np.where(treatments == 0)[0]
-        A1_indices = np.where(treatments == 1)[0]
-
-        # Q1 model
-        Y1 = outcomes[A1_indices]
-        knn_q1 = KNeighborsClassifier(n_neighbors=50).fit(Q_mat[A1_indices,:], Y1)
-        Q1 = knn_q1.predict_proba(Q_mat)
-
-        # Q0 model
-        Y0 = outcomes[A0_indices]
-        knn_q0 = KNeighborsClassifier(n_neighbors=50).fit(Q_mat[A0_indices,:], Y0)
-        Q0 = knn_q0.predict_proba(Q_mat)
-
-        return Q1, Q0
-
-
-    def statistics_computing(self, texts, treatments, confounders, outcomes):
-        Q_mat, As , Ys, Cs = self.get_Q(texts, treatments, confounders, outcomes)
-        Q0, Q1 = Q_mat[:,0], Q_mat[:,1]
+    if model_type == 'GaussianProcessRegression':
+        if kernel == None:
+            kernel = DotProduct() + WhiteKernel()
+        propensities_mod = GaussianProcessClassifier(kernel=kernel, random_state=random_state)
+        propensities_mod.fit(Q_mat, As)
+        print(propensities_mod.score(Q_mat, As)) # check the prediction score of the propensity model
 
         # get propensities
-        gs_knn = self.propensities_knn.predict_proba(Q_mat)[:,1]
-        gs_gp = self.propensities_gp.predict_proba(Q_mat)[:,1]
+        gs = propensities_mod.predict_proba(Q_mat)[:,1]
 
-        # matching
-        # info_mat = np.array(list(zip(As, Ys, gs)))
-        # phi_match= find_match_pair(info_mat)
-        # ate_match = phi_match.mean()
-        # sd_match = phi_match.std()/math.sqrt(len(phi_match))
+    if model_type == 'KNN':
+        propensities_mod = KNeighborsClassifier(n_neighbors=n_neighbors)
+        propensities_mod.fit(Q_mat, As)
+        print(propensities_mod.score(Q_mat, As)) # check the prediction score of the propensity model
+        # get propensities
+        gs = propensities_mod.predict_proba(Q_mat)[:,1]
 
-        # refit (Q0,Q1)
+    if model_type == 'KernelRegression':
+        ksrmv = KernelReg(endog=Q_mat, exog=As, var_type='u')
+        # get propensities
+        gs = propensities_mod.predict_proba(Q_mat)[:,1]
+
+    if model_type == 'DecisionTree':
+        propensities_mod = DecisionTreeClassifier(random_state=random_state)
+        propensities_mod.fit(Q_mat, As)
+        print(propensities_mod.score(Q_mat, As)) # check the prediction score of the propensity model
+        # get propensities
+        gs = propensities_mod.predict_proba(Q_mat)[:,1]
+
+    if model_type == 'Logistic':
+        propensities_mod = LogisticRegression(random_state=random_state)
+        propensities_mod.fit(Q_mat, As)
+        print(propensities_mod.score(Q_mat, As)) # check the prediction score of the propensity model
+        # get propensities
+        gs = propensities_mod.predict_proba(Q_mat)[:,1]
+
+    return gs
 
 
-        # get ATE
-        n = len(Ys)
-        phi_BD = Q1 - Q0
-        ate_BD = phi_BD.mean()
-        sd_BD = phi_BD.std()/math.sqrt(n)
 
-        phi_AIPTW_knn = phi_BD + (Ys - Q1)/gs_knn*As - (Ys - Q0)/(1-gs_knn)*(1-As)
-        ate_AIPTW_knn = phi_AIPTW_knn.mean()
-        sd_AIPTW_knn = phi_AIPTW_knn.std()/math.sqrt(n)
-
-        phi_AIPTW_gp = phi_BD + (Ys - Q1)/gs_gp*As - (Ys - Q0)/(1-gs_gp)*(1-As)
-        ate_AIPTW_gp = phi_AIPTW_gp.mean()
-        sd_AIPTW_gp = phi_AIPTW_gp.std()/math.sqrt(n)
-
-
-        ate_BD = [ate_BD, sd_BD]
-        ate_AIPTW_knn = [ate_AIPTW_knn, sd_AIPTW_knn]
-        ate_AIPTW_gp = [ate_AIPTW_gp, sd_AIPTW_gp]
-        # ate_match = [ate_match, sd_match]
-
-        return gs_knn, gs_gp, Q_mat, ate_BD, ate_AIPTW_knn, ate_AIPTW_gp, As, Ys, Cs
+        
 
 
 
