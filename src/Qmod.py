@@ -30,6 +30,8 @@ from sklearn.tree import DecisionTreeClassifier
 
 from tqdm import tqdm
 
+from util import *
+
 
 CUDA = (torch.cuda.device_count() > 0)
 device = ("cuda" if torch.cuda.is_available() else "cpu")
