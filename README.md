@@ -3,7 +3,6 @@ Pytorch implementation of "Causal Estimation for Text Data with Apparent Overlap
 
 # Quick Start
 ```
-pip install -r prerequisite.txt
 cd src
 python3 Qmod.py
 ```
