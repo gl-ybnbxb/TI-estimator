@@ -8,6 +8,7 @@ pip install -r requirements.txt
 Then install the stable version (1.11.0) of PyTorch following the [official guideline](https://pytorch.org/get-started/locally/).
 
 # Description
+## Qmod
 * Q-Net:
   * Inputs of the system include
     * **Text** data $X$
@@ -38,6 +39,15 @@ Then install the stable version (1.11.0) of PyTorch following the [official guid
   * Other related functions: 
     * ***get_estimands***: get a list of causal estimators
 
+## simulation
+* Get simulated data:
+  * run_simulation
+    * data: raw data with treatments, confounds and texts
+    * propensities: prechose propensity score $\pi(C)=P(A=1|C),\ C=0,1$
+    * beta_t: the treatment level
+    * beta_c: the confounding level
+    * gamma: the level of noise
+    * cts: outcome type (True: continous outcome; False: binary outcome)
 
 # Usage
 
