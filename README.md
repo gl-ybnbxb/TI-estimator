@@ -41,13 +41,23 @@ Then install the stable version (1.11.0) of PyTorch following the [official guid
 
 ## simulation
 * Get simulated data:
-  * run_simulation
+  * ***run_simulation***
     * data: raw data with treatments, confounds and texts
     * propensities: prechose propensity score $\pi(C)=P(A=1|C),\ C=0,1$
-    * beta_t: the treatment level
+    * beta_t: the treatment level; if the outcome is continuous, then this is also the oracle NDE
     * beta_c: the confounding level
     * gamma: the level of noise
     * cts: outcome type (True: continous outcome; False: binary outcome)
+    * **return**: simulated data frame; offset $E\left(\pi(C)\right)$
+
+```
+raw_df = pd.read_csv('./src/music.csv')
+simulated_df, offset =run_simulation(raw_df, propensities=[0.8, 0.6], 
+                            beta_t=1.0,  # 1.0, 0.0
+                            beta_c=50.0  # 50.0, 100.0
+                            gamma=1.0    # 1.0, 4.0
+                            cts=True)  
+```
 
 # Usage
 
