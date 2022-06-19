@@ -136,11 +136,9 @@ def run_simulation(data,
     beta_t=0.5,
     beta_c=10,
     gamma=0.0,
-    accuracy=-1,
     size=-1,
     cts=False):
     """ T: 5 stars review (1) or 1 or 2 stars (0)
-        T*: sentiment/bert predictions/random sampling for T*
         C: CD/MP3 (1) or not (0)
         Y: simulate from f(T,C)
     """
