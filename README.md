@@ -41,6 +41,12 @@ Then install the stable version (1.11.0) of PyTorch following the [official guid
 
 # Usage
 
+**Import** functions.
+
+```
+from Qmod import *
+```
+
 **Initialize** the Q-Net model wrapper and **train** the model.
 ```
 mod = QNet(batch_size = 64, # batch size for training
