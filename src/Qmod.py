@@ -385,7 +385,7 @@ def get_agg_q(data_dir_dict, save_data_dir):
         data_dir_dict is a dictionary that each seed has a corresponding data directory'''
 
     
-    k = len(seedset)
+    k = len(data_dir_dict)
     Q0s, Q1s, As, Ys, Cs = [], [], [], [], []
 
     for seed in data_dir_dict.keys():
@@ -408,9 +408,9 @@ def get_agg_q(data_dir_dict, save_data_dir):
     Q0_agg, Q1_agg = np.sum(Q0s, axis=0)/k, np.sum(Q1s, axis=0)/k
         
     # save the aggregated data
-    df_agg = df[['A', 'Y', 'C']]
-    df_agg['Q0'] = Q0_agg
-    df_agg['Q1'] = Q1_agg
+    df_agg = df[['A', 'Y', 'C']].copy()
+    df_agg['Q0'] = Q0_agg.copy()
+    df_agg['Q1'] = Q1_agg.copy()
     df_agg.to_csv(save_data_dir, index=False)
 
     return
