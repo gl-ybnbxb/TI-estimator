@@ -113,7 +113,6 @@ class CausalQNet(DistilBertPreTrainedModel):
 
         return Q0, Q1, mlm_loss, y_loss, a_loss, a_acc
 
-
 class QNet:
     """Model wrapper for training Qnet and get Q's for new data"""
     def __init__(self, a_weight = 1.0, y_weight=1.0, mlm_weight=1.0,
@@ -311,6 +310,7 @@ class QNet:
 
         return Q0s, Q1s, As, Ys, Cs
 
+    
 def k_fold_fit_and_predict(read_data_dir, save_data_dir,
                         a_weight, y_weight, mlm_weight, model_dir, 
                         n_splits:int, lr=2e-5, batch_size=64):
@@ -482,7 +482,7 @@ def get_TI_estimator(gs, Q0s, Q1s, As, Ys, error=0.05):
         return ti_estimate
 
 
- def get_estimands(gs, Q0s, Q1s, As, Ys, Cs=None, alpha=1, error=0.05, g_true=[0.8,0.6]):
+def get_estimands(gs, Q0s, Q1s, As, Ys, Cs=None, alpha=1, error=0.05, g_true=[0.8,0.6]):
   """ Get different estimands based on propensity scores, conditional expected outcomes, treatments and outcomes """
     estimands = []
 
