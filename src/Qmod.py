@@ -483,7 +483,7 @@ def get_TI_estimator(gs, Q0s, Q1s, As, Ys, error=0.05):
 
 
 def get_estimands(gs, Q0s, Q1s, As, Ys, Cs=None, alpha=1, error=0.05, g_true=[0.8,0.6]):
-  """ Get different estimands based on propensity scores, conditional expected outcomes, treatments and outcomes """
+    """ Get different estimands based on propensity scores, conditional expected outcomes, treatments and outcomes """
     estimands = []
 
     estimands.append(('unadj_T', [ATE_unadjusted(As, Ys)] + [np.nan] * 3))
