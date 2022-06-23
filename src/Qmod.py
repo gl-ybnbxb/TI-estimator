@@ -25,7 +25,8 @@ from scipy.special import logit
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors, KNeighborsClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel
+from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel, Matern, RBF
+from sklearn.ensemble import BaggingClassifier, AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 
 from tqdm import tqdm
@@ -367,7 +368,7 @@ def k_fold_fit_and_predict(read_data_dir, save_data_dir,
         os.remove(moddir + '_bestmod.pt')
 
 
-    # if there's nan in Q0/Q1/g, raise error
+    # if there's nan in Q0/Q1, raise error
     assert np.isnan(Q0s).sum() == 0
     assert np.isnan(Q1s).sum() == 0
 
@@ -418,7 +419,7 @@ def get_agg_q(data_dir_dict, save_data_dir):
 
 
 ''' The second stage: propensity scores estimation '''
-def get_propensities(As, Q0s, Q1s, model_type='GaussianProcessRegression', kernel=None, random_state=0, n_neighbors=50, base_estimator=None):
+def get_propensities(As, Q0s, Q1s, model_type='GaussianProcessRegression', kernel=None, random_state=0, n_neighbors=100, base_estimator=None):
     """Train the propensity model directly on the data 
     and compute propensities of the data"""
 
@@ -436,7 +437,7 @@ def get_propensities(As, Q0s, Q1s, model_type='GaussianProcessRegression', kerne
     if model_type == 'KNearestNeighbors':
         propensities_mod = KNeighborsClassifier(n_neighbors=n_neighbors)
         propensities_mod.fit(Q_mat, As)
-    
+        
         # get propensities
         gs = propensities_mod.predict_proba(Q_mat)[:,1]
 
@@ -464,11 +465,12 @@ def get_propensities(As, Q0s, Q1s, model_type='GaussianProcessRegression', kerne
     if model_type == 'Logistic':
         propensities_mod = LogisticRegression(random_state=random_state)
         propensities_mod.fit(Q_mat, As)
-       
+        
         # get propensities
         gs = propensities_mod.predict_proba(Q_mat)[:,1]
 
     return gs
+
 
 ''' The third stage: get TI estimator '''
 def get_TI_estimator(gs, Q0s, Q1s, As, Ys, error=0.05):
